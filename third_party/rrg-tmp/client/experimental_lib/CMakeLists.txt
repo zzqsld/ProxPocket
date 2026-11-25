@@ -455,6 +455,18 @@ add_custom_command(
     DEPENDS ${PM3_ROOT}/common/default_version_pm3.c
 )
 
+# Android x86: upstream enables AVX via per-function target pragmas, but those are
+# compiled out on __ANDROID__, so the whole file must get the ISA flags instead.
+# Backend is still picked at runtime by cipher_bs_dispatch.c, non-AVX devices are safe.
+if (ANDROID_ABI STREQUAL "x86" OR ANDROID_ABI STREQUAL "x86_64")
+    set_source_files_properties(
+        ${PM3_ROOT}/client/src/loclass/cipher_bs_avx2.c
+        PROPERTIES COMPILE_OPTIONS "-mavx2")
+    set_source_files_properties(
+        ${PM3_ROOT}/client/src/loclass/cipher_bs_avx512.c
+        PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512bw;-mavx512vl;-mavx512dq")
+endif()
+
 set(ADDITIONAL_SRC "")
 set(ADDITIONAL_LNK "")
 set(ADDITIONAL_DIRS "")
