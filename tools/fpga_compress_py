@@ -1,0 +1,22 @@
+#!/usr/bin/env python
+import struct, sys, lz4.block
+RING = 30720
+def compress(inputs, outpath):
+    data = b"".join(open(p, "rb").read() for p in inputs)
+    out = bytearray(); pos = 0
+    while pos < len(data):
+        c = lz4.block.compress(data[pos:pos+RING], mode="high_compression", compression=12, store_size=False)
+        out += struct.pack("<I", len(c)) + c
+        pos += RING
+    open(outpath, "wb").write(out)
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if args and args[0] == "-v":
+        open(args[-1], "w").write('#include "fpga.h"\nconst int g_fpga_bitstream_num = 1;\nconst FPGA_VERSION_INFORMATION g_fpga_version_information[1] = {\n    { "fpga_pmimax_hf.ncd image 2s300avq100 2024-02-03 15:13:01", FPGA_BITSTREAM_HF },\n};\n')
+        sys.exit(0)
+    if args and args[0] == "-s":
+        data = open(args[1], "rb").read()
+        c = lz4.block.compress(data, mode="high_compression", compression=12, store_size=False)
+        open(args[2], "wb").write(struct.pack("<I", len(c)) + c)
+        sys.exit(0)
+    compress(args[:-1], args[-1])

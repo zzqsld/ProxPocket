@@ -1,0 +1,127 @@
+diff --git a/armsrc/Makefile b/armsrc/Makefile
+index 0f83596..75b47fd 100644
+--- a/armsrc/Makefile
++++ b/armsrc/Makefile
+@@ -188,21 +188,17 @@ version_pm3.c: default_version_pm3.c $(OBJDIR)/fpga_version_info.o $(OBJDIR)/fpg
+ 	$(info [-] CHECK $@)
+ 	$(Q)$(CP) $< $@
+ 
+-fpga_version_info.c: $(FPGA_BITSTREAMS) $(FPGA_COMPRESSOR)
+-	$(info [-] GEN $@)
+-	$(Q)$(FPGA_COMPRESSOR) -v $(filter %.bit,$^) $@
++fpga_version_info.c: prebuilt/fpga_version_info.c
++	$(info [-] GEN $@ (prebuilt))
++	$(Q)$(CP) $< $@
+ 
+ $(OBJDIR)/fpga_all.o: $(OBJDIR)/fpga_all.bit.z
+ 	$(info [-] GEN $@)
+ 	$(Q)$(CROSS_OBJCOPY) -O elf32-littlearm -I binary -B arm --prefix-sections=fpga_all_bit $^ $@
+ 
+-$(OBJDIR)/fpga_all.bit.z: $(FPGA_BITSTREAMS) | $(FPGA_COMPRESSOR)
+-	$(info [-] GEN $@)
+-ifeq ($(Q),@)
+-	@$(FPGA_COMPRESSOR) $(filter %.bit,$^) $@ >/dev/null
+-else
+-	$(FPGA_COMPRESSOR) $(filter %.bit,$^) $@
+-endif
++$(OBJDIR)/fpga_all.bit.z: prebuilt/fpga_all.bit.z
++	$(info [-] GEN $@ (prebuilt))
++	$(Q)$(CP) $< $@
+ 
+ $(FPGA_COMPRESSOR):
+ 	$(error [!] MISSING $@ => To build it, go the root of the repo and do "make $(notdir $@)")
+diff --git a/armsrc/fpgaloader.c b/armsrc/fpgaloader.c
+index b3d739a..3e18973 100644
+--- a/armsrc/fpgaloader.c
++++ b/armsrc/fpgaloader.c
+@@ -198,14 +198,36 @@ bool FpgaSetupSscDma(uint8_t *buf, uint16_t len) {
+     return true;
+ }
+ 
++#if defined(FPGA_RAW_IMAGE)
++// PM3 Max: vendor FPGA image is stored as a raw .bit (not LZ4-compressed),
++// stream it directly.
++static uint32_t fpga_raw_pos = 0;
++#endif
++
+ //----------------------------------------------------------------------------
+ // Uncompress (inflate) the FPGA data. Returns one decompressed byte with each call.
+ //----------------------------------------------------------------------------
+ static int get_from_fpga_combined_stream(lz4_streamp_t compressed_fpga_stream, uint8_t *output_buffer) {
++#if defined(FPGA_RAW_IMAGE)
++    (void)compressed_fpga_stream;
++    (void)output_buffer;
++    uint32_t total = (uint32_t)_binary_obj_fpga_all_bit_z_end - (uint32_t)_binary_obj_fpga_all_bit_z_start;
++    if (fpga_raw_pos >= total) {
++        return -1;
++    }
++    uncompressed_bytes_cnt++;
++    return ((const uint8_t *)_binary_obj_fpga_all_bit_z_start)[fpga_raw_pos++];
++#else
+     if (fpga_image_ptr == output_buffer + FPGA_RING_BUFFER_BYTES) { // need more data
+         fpga_image_ptr = output_buffer;
++        if (compressed_fpga_stream->avail_in <= 4) {
++            return -1;
++        }
+         int cmp_bytes;
+         memcpy(&cmp_bytes, compressed_fpga_stream->next_in, sizeof(int));
++        if (cmp_bytes <= 0 || cmp_bytes + 4 > compressed_fpga_stream->avail_in) {
++            return -1;
++        }
+         compressed_fpga_stream->next_in += 4;
+         compressed_fpga_stream->avail_in -= cmp_bytes + 4;
+         int res = LZ4_decompress_safe_continue(compressed_fpga_stream->lz4StreamDecode,
+@@ -221,6 +243,7 @@ static int get_from_fpga_combined_stream(lz4_streamp_t compressed_fpga_stream, u
+     }
+     uncompressed_bytes_cnt++;
+     return *fpga_image_ptr++;
++#endif
+ }
+ 
+ static int bitstream_target_to_index(FPGA_config bitstream_target) {
+@@ -266,9 +289,13 @@ static bool reset_fpga_stream(int bitstream_target, lz4_streamp_t compressed_fpg
+     compressed_fpga_stream->next_in = (char *)_binary_obj_fpga_all_bit_z_start;
+     compressed_fpga_stream->avail_in = (uint32_t)_binary_obj_fpga_all_bit_z_end - (uint32_t)_binary_obj_fpga_all_bit_z_start;
+ 
++#if defined(FPGA_RAW_IMAGE)
++    fpga_raw_pos = 0;
++#else
+     int res = LZ4_setStreamDecode(compressed_fpga_stream->lz4StreamDecode, NULL, 0);
+     if (res == 0)
+         return false;
++#endif
+ 
+     fpga_image_ptr = output_buffer + FPGA_RING_BUFFER_BYTES;
+ 
+diff --git a/common_arm/Makefile.hal b/common_arm/Makefile.hal
+index 568c245..1cc8afc 100644
+--- a/common_arm/Makefile.hal
++++ b/common_arm/Makefile.hal
+@@ -149,6 +149,13 @@ else ifeq ($(PLATFORM),PM3GENERIC)
+     ifeq ($(LED_ORDER),PM3EASY)
+         PLATFORM_DEFS = -DLED_ORDER_PM3EASY
+     endif
++else ifeq ($(PLATFORM),PM3PMAX)
++    # PM3 Max (AT91SAM7S512 + XC2S15, single combined vendor FPGA image,
++    # prebuilt blob embedded via armsrc/prebuilt, no Xilinx build needed)
++    FPGA_BITSTREAMS =
++    PLATFORM_DEFS = -DWITH_FLASH -DWITH_SMARTCARD -DWITH_FPC_USART_HOST -DWITH_FPC_USART_DEV -DXC3
++    PLTNAME = PM3 Max with XC2S15
++    PLATFORM_FPGA = xc2s15
+ else ifeq ($(PLATFORM),PM3ICOPYX)
+     # FPGA bitstream files, the order doesn't matter anymore - only hf has a bitstream
+     FPGA_BITSTREAMS = fpga_icopyx_hf.bit
+diff --git a/common_fpga/fpga.h b/common_fpga/fpga.h
+index 1b009cd..0fb36bd 100644
+--- a/common_fpga/fpga.h
++++ b/common_fpga/fpga.h
+@@ -28,6 +28,9 @@
+ #elif defined XC2S50
+ #define FPGA_TYPE "2s50vq144"
+ #define FPGA_CONFIG_SIZE                    69984L  // FPGA .bit file rounded up to next multiple of FPGA_INTERLEAVE_SIZE
++#elif defined XC2S15
++#define FPGA_TYPE "2s15vq100"
++#define FPGA_CONFIG_SIZE                    61632L  // PM3 Max vendor image decompressed stream (61,440 bytes) rounded up to next multiple of FPGA_INTERLEAVE_SIZE
+ #else
+ #define FPGA_TYPE "2s30vq100"
+ #define FPGA_CONFIG_SIZE                    42336L  // FPGA .bit file rounded up to next multiple of FPGA_INTERLEAVE_SIZE

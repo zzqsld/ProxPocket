@@ -1,0 +1,111 @@
+diff --git a/armsrc/Makefile b/armsrc/Makefile
+index 47cf7a3..9e6cc3e 100644
+--- a/armsrc/Makefile
++++ b/armsrc/Makefile
+@@ -285,21 +285,17 @@ version_pm3.c: default_version_pm3.c $(OBJDIR)/fpga_version_info.o $(FPGA_ALL_O_
+ 	$(info [-] CHECK $@)
+ 	$(Q)$(CP) $< $@
+ 
+-fpga_version_info.c: $(FPGA_BITSTREAMS) $(FPGA_COMPRESSOR)
+-	$(info [-] GEN $@)
+-	$(Q)$(FPGA_COMPRESSOR) -v $(filter %.bit,$^) $@
++fpga_version_info.c: prebuilt/fpga_version_info.c
++	$(info [-] GEN $@ (prebuilt))
++	$(Q)$(CP) $< $@
+ 
+ $(OBJDIR)/fpga_all.o: $(OBJDIR)/fpga_all.bit.z
+ 	$(info [-] GEN $@)
+ 	$(Q)$(CROSS_OBJCOPY) -O elf32-littlearm -I binary -B arm --prefix-sections=fpga_all_bit $^ $@
+ 
+-$(OBJDIR)/fpga_all.bit.z: $(FPGA_BITSTREAMS) $(FPGA_COMPRESSOR)
+-	$(info [-] GEN $@)
+-ifeq ($(Q),@)
+-	@$(FPGA_COMPRESSOR) $(filter %.bit,$^) $@ >/dev/null
+-else
+-	$(FPGA_COMPRESSOR) $(filter %.bit,$^) $@
+-endif
++$(OBJDIR)/fpga_all.bit.z: prebuilt/fpga_all.bit.z
++	$(info [-] GEN $@ (prebuilt))
++	$(Q)$(CP) $< $@
+ 
+ $(FPGA_COMPRESSOR):
+ 	$(error [!] MISSING $@ => To build it, go the root of the repo and do "make $(notdir $@)")
+diff --git a/armsrc/lfsampling.c b/armsrc/lfsampling.c
+index c4fb996..b1d3632 100644
+--- a/armsrc/lfsampling.c
++++ b/armsrc/lfsampling.c
+@@ -492,6 +492,7 @@ int ReadLF_realtime(bool reader_field, bool cotag, uint32_t sample_limit) {
+ 
+     bool trigger_hit = false;
+     int16_t checked = 0;
++    uint32_t starve = 0; // bound the SSC wait, a missing FPGA stream must not hang the device
+ 
+     return_value = async_usb_write_start();
+     if (return_value != PM3_SUCCESS) {
+@@ -517,6 +518,13 @@ int ReadLF_realtime(bool reader_field, bool cotag, uint32_t sample_limit) {
+         }
+         ++checked;
+ 
++        // bail out instead of hanging forever when the FPGA delivers no samples
++        if (++starve == 5000000) {
++            Dbprintf("LF realtime: no samples from FPGA, aborting");
++            return_value = PM3_EIO;
++            goto out;
++        }
++
+         WDT_HIT();
+ 
+         if (FPGA_SSC_TX_Ready()) {
+@@ -524,6 +532,7 @@ int ReadLF_realtime(bool reader_field, bool cotag, uint32_t sample_limit) {
+         }
+ 
+         if (FPGA_SSC_RX_Ready()) {
++            starve = 0; // got samples, reset the starvation guard
+             volatile uint8_t sample = (uint8_t)FPGA_SSC_RX_Value();
+ 
+             // (RDV4) Test point 8 (TP8) can be used to trigger oscilloscope
+@@ -563,6 +572,7 @@ int ReadLF_realtime(bool reader_field, bool cotag, uint32_t sample_limit) {
+ 
+                         WDT_HIT();
+                         if (GetTicksDelta(start_ticks) > LF_REALTIME_USB_TIMEOUT) {
++                            Dbprintf("LF realtime: usb stall after %u bytes", total_logged);
+                             return_value = PM3_EIO;
+                             goto out;
+                         }
+diff --git a/common_arm/Makefile.hal b/common_arm/Makefile.hal
+index 30d764a..bc50fd1 100644
+--- a/common_arm/Makefile.hal
++++ b/common_arm/Makefile.hal
+@@ -159,6 +159,13 @@ else ifeq ($(PLATFORM),PM3GENERIC)
+     ifeq ($(LED_ORDER),PM3EASY)
+         PLATFORM_DEFS = -DLED_ORDER_PM3EASY -DCHIP_AT91SAM7S
+     endif
++else ifeq ($(PLATFORM),PM3PMAX)
++    # PM3 Max (AT91SAM7S512 + XC3S100E, combined vendor FPGA image
++    # embedded prebuilt via armsrc/prebuilt, no Xilinx build needed)
++    FPGA_BITSTREAMS =
++    PLATFORM_DEFS = -DWITH_FLASH -DWITH_SMARTCARD -DWITH_FPC_USART_HOST -DWITH_FPC_USART_DEV -DXC3 -DCHIP_AT91SAM7S
++    PLTNAME = PM3 Max with XC3S100E
++    PLATFORM_FPGA = xc3s100e
+ else ifeq ($(PLATFORM),PM3ICOPYX)
+     # FPGA bitstream files, the order doesn't matter anymore - only hf has a bitstream
+     FPGA_BITSTREAMS = fpga_icopyx_hf.bit
+diff --git a/common_arm/fpga/fpga_loader.c b/common_arm/fpga/fpga_loader.c
+index 8a3b6ce..f151b63 100644
+--- a/common_arm/fpga/fpga_loader.c
++++ b/common_arm/fpga/fpga_loader.c
+@@ -55,8 +55,14 @@ static int downloaded_bitstream = FPGA_BITSTREAM_UNKNOWN;
+ static int get_from_fpga_combined_stream(lz4_streamp_t compressed_fpga_stream, uint8_t *output_buffer) {
+     if (fpga_image_ptr == output_buffer + FPGA_RING_BUFFER_BYTES) { // need more data
+         fpga_image_ptr = output_buffer;
++        if (compressed_fpga_stream->avail_in <= 4) {
++            return -1;
++        }
+         int cmp_bytes;
+         memcpy(&cmp_bytes, compressed_fpga_stream->next_in, sizeof(int));
++        if (cmp_bytes <= 0 || cmp_bytes + 4 > compressed_fpga_stream->avail_in) {
++            return -1;
++        }
+         compressed_fpga_stream->next_in += 4;
+         compressed_fpga_stream->avail_in -= cmp_bytes + 4;
+         int res = LZ4_decompress_safe_continue(compressed_fpga_stream->lz4StreamDecode,

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Proxmark3 Iceman 原生 CDC -->
+    <usb-device vendor-id="39620" product-id="19343" /> <!-- 9AC4:4B8F -->
+    <usb-device vendor-id="11565" product-id="20557" /> <!-- 2D2D:504D -->
+    <!-- CH341 串口（部分 PM3 Max / Easy） -->
+    <usb-device vendor-id="6790" product-id="21795" /> <!-- 1A86:5523 -->
+    <usb-device vendor-id="6790" product-id="29987" /> <!-- 1A86:7523 -->
+</resources>

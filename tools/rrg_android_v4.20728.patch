@@ -1,0 +1,85 @@
+diff --git a/client/experimental_lib/CMakeLists.txt b/client/experimental_lib/CMakeLists.txt
+index bc2c2e7b8..acdbb7da6 100644
+--- a/client/experimental_lib/CMakeLists.txt
++++ b/client/experimental_lib/CMakeLists.txt
+@@ -169,46 +169,35 @@ if (NOT SKIPJANSSONSYSTEM EQUAL 1)
+ endif (NOT SKIPJANSSONSYSTEM EQUAL 1)
+ 
+ if(EMBED_BZIP2)
+-    cmake_policy(SET CMP0114 NEW)
+-    set(BZIP2_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/deps/bzip2/src/bzip2)
+-    # Specify SOURCE_DIR will cause some errors
+-    ExternalProject_Add(bzip2
+-        GIT_REPOSITORY        https://android.googlesource.com/platform/external/bzip2
+-        GIT_TAG               platform-tools-30.0.2
+-        PREFIX                deps/bzip2
+-        # SOURCE_DIR            ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2
+-        CONFIGURE_COMMAND     mkdir -p ${BZIP2_BUILD_DIR} && git archive --format tar HEAD | tar -C ${BZIP2_BUILD_DIR} -x
+-        BUILD_IN_SOURCE       ON
+-        BUILD_COMMAND         make -C ${BZIP2_BUILD_DIR} -j4 CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} LD=${CMAKE_C_COMPILER} AR=${CMAKE_AR} RANLIB=${CMAKE_RANLIB} ${CFLAGS_EXTERNAL_LIB} libbz2.a
+-        INSTALL_COMMAND       ""
+-        LOG_DOWNLOAD          ON
++    add_library(bzip2 STATIC
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2/blocksort.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2/huffman.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2/crctable.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2/randtable.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2/compress.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2/decompress.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2/bzlib.c
+     )
+-    ExternalProject_Add_StepTargets(bzip2 configure build install)
+-    set(BZIP2_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/deps/bzip2/src/bzip2)
+-    set(BZIP2_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/deps/bzip2/src/bzip2/libbz2.a)
++    target_include_directories(bzip2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2)
++    target_compile_options(bzip2 PRIVATE -w -O2)
++    set(BZIP2_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/deps/bzip2)
++    set(BZIP2_LIBRARIES bzip2)
+     set(BZIP2_FOUND ON)
+ else(EMBED_BZIP2)
+     find_package (BZip2 REQUIRED)
+ endif(EMBED_BZIP2)
+ 
+ if(EMBED_LZ4)
+-    cmake_policy(SET CMP0114 NEW)
+-    set(LZ4_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/deps/lz4/src/lz4)
+-    # Specify SOURCE_DIR will cause some errors
+-    ExternalProject_Add(lz4
+-        GIT_REPOSITORY        https://android.googlesource.com/platform/external/lz4
+-        GIT_TAG               platform-tools-30.0.2
+-        PREFIX                deps/lz4
+-        # SOURCE_DIR            ${CMAKE_CURRENT_SOURCE_DIR}/deps/lz4
+-        CONFIGURE_COMMAND     mkdir -p ${LZ4_BUILD_DIR} && git archive --format tar HEAD | tar -C ${LZ4_BUILD_DIR} -x
+-        BUILD_IN_SOURCE       ON
+-        BUILD_COMMAND         make -C ${LZ4_BUILD_DIR}/lib -j4 CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} LD=${CMAKE_C_COMPILER} AR=${CMAKE_AR} RANLIB=${CMAKE_RANLIB} ${CFLAGS_EXTERNAL_LIB} liblz4.a
+-        INSTALL_COMMAND       ""
+-        LOG_DOWNLOAD          ON
++    add_library(lz4 STATIC
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/lz4/lib/lz4.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/lz4/lib/lz4hc.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/lz4/lib/lz4frame.c
++        ${CMAKE_CURRENT_SOURCE_DIR}/deps/lz4/lib/xxhash.c
+     )
+-    ExternalProject_Add_StepTargets(lz4 configure build install)
+-    set(LZ4_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/deps/lz4/src/lz4/lib)
+-    set(LZ4_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/deps/lz4/src/lz4/lib/liblz4.a)
++    target_include_directories(lz4 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/deps/lz4/lib)
++    target_compile_options(lz4 PRIVATE -w -O2)
++    set(LZ4_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/deps/lz4/lib)
++    set(LZ4_LIBRARIES lz4)
+     set(LZ4_FOUND ON)
+ else(EMBED_LZ4)
+     find_path(LZ4_INCLUDE_DIRS lz4frame.h)
+diff --git a/client/src/pm3.c b/client/src/pm3.c
+index ff08c8b94..cdf943349 100644
+--- a/client/src/pm3.c
++++ b/client/src/pm3.c
+@@ -38,7 +38,7 @@ pm3_device_t *pm3_open(const char *port) {
+     }
+ 
+     if ((port != NULL) && (!g_session.pm3_present))
+-        exit(EXIT_FAILURE);
++        return NULL;
+ 
+     if (!g_session.pm3_present) {
+         PrintAndLogEx(INFO, _RED_("OFFLINE") " mode");

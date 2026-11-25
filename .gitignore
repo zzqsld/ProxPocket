@@ -1,0 +1,31 @@
+# Android / Gradle
+local.properties
+.gradle/
+build/
+app/build/
+app/release/
+*.iml
+.idea/
+.cxx/
+captures/
+
+# 原生库构建产物（保留源码，忽略构建目录）
+third_party/rrg-tmp/client/experimental_lib/build-android/
+third_party/rrg-tmp/client/experimental_lib/deps/
+
+# 已独立发布的仓库 / 二进制分发，不进本仓库
+pm3max-openfw/
+client-v4.23346/
+firmware/
+third_party/proxmark3/
+third_party/pm3-fw/
+
+# 密钥源文件（App 内嵌合并后的字典位于 app/src/main/assets/pm3/dictionaries）
+dictionaries/
+
+# 硬件实拍（见 PM3Max-OpenFW 仓库 hardware/）
+IMG*.jpg
+
+# 本机编译工具链与构建工具二进制
+tools/arm-gnu-toolchain-*/
+tools/fpga_compress
