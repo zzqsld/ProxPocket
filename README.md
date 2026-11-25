@@ -30,8 +30,16 @@ PM3 Max 硬件的 RRG v4.23346 固件（开源，含刷机脚本和 Windows 客�
 
 ## 下载
 
-[Releases](https://github.com/zzqsld/ProxPocket/releases) 页面提供编译好的 APK
-（arm64-v8a，Android 8.0+）。手机需支持 USB OTG，配合 OTG 转接线连接 PM3 设备。
+[Releases](https://github.com/zzqsld/ProxPocket/releases) 页面提供四种架构的编译 APK
+（Android 8.0+），按手机处理器选择：
+
+| 文件 | 适用 |
+|---|---|
+| `*-arm64-v8a.apk` | 绝大多数现代手机（推荐，不确定就选它） |
+| `*-armeabi-v7a.apk` | 老旧 32 位手机 |
+| `*-x86.apk` / `*-x86_64.apk` | Intel 处理器设备、x86 模拟器 |
+
+手机需支持 USB OTG，配合 OTG 转接线连接 PM3 设备。
 
 ## 架构
 

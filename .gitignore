@@ -11,6 +11,7 @@ captures/
 
 # 原生库构建产物（保留源码，忽略构建目录）
 third_party/rrg-tmp/client/experimental_lib/build-android/
+third_party/rrg-tmp/client/experimental_lib/build-*/
 third_party/rrg-tmp/client/experimental_lib/deps/
 
 # 已独立发布的仓库 / 二进制分发，不进本仓库
